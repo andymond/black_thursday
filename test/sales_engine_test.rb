@@ -259,8 +259,8 @@ class SalesEngineTest < Minitest::Test
     assert_equal 373.33, merchants_and_their_invoice_items[12334105].last.unit_price
   end
 
-  def test_link_merchants_with_total_revenue
-    merchants_and_total_revenue = @sales_engine.link_merchants_with_total_revenue
+  def test_link_merchant_ids_with_total_revenue
+    merchants_and_total_revenue = @sales_engine.link_merchant_ids_with_total_revenue
 
     assert_equal [12334141, 12334105, 12334185, 12334113], merchants_and_total_revenue.keys
     assert_equal [13795.59, 3607.91, 12254.42, 8860.77], merchants_and_total_revenue.values

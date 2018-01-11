@@ -3,7 +3,7 @@ module MerchantRelationshipGenerator
   def generate_merchant_relationships
     @merchant_ids_with_invoice_ids   ||= link_merchant_ids_with_invoice_ids
     @merchant_ids_with_invoice_items ||= link_merchant_ids_with_invoice_items
-    @merchant_ids_with_total_revenue ||= link_merchants_with_total_revenue
+    @merchant_ids_with_total_revenue ||= link_merchant_ids_with_total_revenue
     @merchants_with_items            ||= link_merchants_with_items
     @merchants_with_invoices         ||= link_merchants_with_invoices
     @merchants_with_prices           ||= link_merchants_with_prices
@@ -27,7 +27,7 @@ module MerchantRelationshipGenerator
     end
   end
 
-  def link_merchants_with_total_revenue
+  def link_merchant_ids_with_total_revenue
     @merchant_ids_with_invoice_items.transform_values do |invoice_items|
       invoice_items.map do |invoice_item|
         invoice_item.unit_price * invoice_item.quantity
