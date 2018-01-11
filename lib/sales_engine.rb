@@ -4,7 +4,7 @@ require_relative "invoice_repository"
 require_relative "invoice_item_repository"
 require_relative "transaction_repository"
 require_relative "customer_repository"
-require_relative "../lib/merchant_link_generator"
+require_relative "../lib/merchant_relationship_generator"
 require "bigdecimal"
 require 'pry'
 
