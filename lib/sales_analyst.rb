@@ -14,11 +14,11 @@ class SalesAnalyst
   attr_reader :sales_engine
 
   def initialize(sales_engine)
-    @sales_engine = sales_engine
+    @sales_engine ||= sales_engine
   end
 
   def items_per_merchant
-    merchants_items = sales_engine.get_all_merchant_items.values
+    merchants_items = sales_engine.merchants_with_items.values
     merchants_items.map do |merchant_items|
       BigDecimal.new(merchant_items.count)
     end
@@ -39,18 +39,18 @@ class SalesAnalyst
   def merchants_with_high_item_count
     stdev = average_items_per_merchant_standard_deviation
     limit = average_items_per_merchant + stdev
-    sales_engine.get_all_merchant_items.map do |merchant, items|
+    sales_engine.merchants_with_items.map do |merchant, items|
       merchant if items.count > limit
     end.compact
   end
 
   def average_item_price_for_merchant(merchant_id)
-    merchant_prices = sales_engine.get_one_merchant_prices(merchant_id)
+    merchant_prices = sales_engine.get_prices_from_one_merchant(merchant_id)
     (merchant_prices.sum / merchant_prices.count).round(2)
   end
 
   def average_average_price_per_merchant
-    merchants_prices = sales_engine.get_all_merchant_prices.values
+    merchants_prices = sales_engine.merchants_with_prices.values
     full_average = merchants_prices.map do |merchant_prices|
       merchant_prices.sum / merchant_prices.count
     end.sum / merchants_prices.count
@@ -58,7 +58,7 @@ class SalesAnalyst
   end
 
   def all_item_prices
-    sales_engine.get_all_merchant_prices.values.flatten
+    sales_engine.merchants_with_prices.values.flatten
   end
 
   def average_item_price
@@ -68,7 +68,7 @@ class SalesAnalyst
   def item_prices_standard_deviation
     average = average_item_price
     variance = all_item_prices.map do |item_price|
-      ((average - item_price).abs) ** 2
+      (average - item_price) ** 2
     end.sum / (all_item_prices.count - 1)
     Math.sqrt(variance)
   end
@@ -82,39 +82,42 @@ class SalesAnalyst
 
   def golden_items
     golden_prices.map do |golden_price|
-      sales_engine.search_ir_by_price(golden_price)
+      sales_engine.get_items_by_price(golden_price)
     end.flatten
   end
 
   def invoice_count_per_merchant
-    merchants_invoices = sales_engine.get_all_merchant_invoices
+    merchants_invoices = sales_engine.merchants_with_invoices
     merchants_invoices.transform_values do |invoices|
       invoices.count.to_f
     end
   end
 
   def average_invoices_per_merchant
-    (invoice_count_per_merchant.values.sum / invoice_count_per_merchant.count).round(2)
+    sum = invoice_count_per_merchant.values.sum
+    count = invoice_count_per_merchant.count
+    (sum / count).round(2)
   end
 
   def average_invoices_per_merchant_standard_deviation
     average = average_invoices_per_merchant
     variance = invoice_count_per_merchant.values.map do |invoice_count|
-      ((average - invoice_count).abs) ** 2
+      (average - invoice_count) ** 2
     end.sum / (invoice_count_per_merchant.count - 1)
     Math.sqrt(variance).round(2)
   end
 
-# CAN WE DO SAME BELOW FOR GOLDEN ITEMS?
   def top_merchants_by_invoice_count
-    limit = average_invoices_per_merchant + (2 * average_invoices_per_merchant_standard_deviation)
+    doubled_stdev = 2 * average_invoices_per_merchant_standard_deviation
+    limit = average_invoices_per_merchant + doubled_stdev
     invoice_count_per_merchant.select do |merchant, invoice_count|
       invoice_count >= limit
     end.keys
   end
 
   def bottom_merchants_by_invoice_count
-    limit = average_invoices_per_merchant - (2 * average_invoices_per_merchant_standard_deviation)
+    doubled_stdev = 2 * average_invoices_per_merchant_standard_deviation
+    limit = average_invoices_per_merchant - doubled_stdev
     invoice_count_per_merchant.select do |merchant, invoice_count|
       invoice_count <= limit
     end.keys
@@ -147,7 +150,8 @@ class SalesAnalyst
   end
 
   def top_days_by_invoice_count
-    limit = average_invoice_counts_per_day + average_invoices_per_day_standard_deviation
+    stdev = average_invoices_per_day_standard_deviation
+    limit = average_invoice_counts_per_day + stdev
     top_days = invoice_counts_per_weekday.select do |day, count|
       count >= limit
     end.keys
@@ -160,11 +164,11 @@ class SalesAnalyst
   end
 
   def invoice_status(status)
-    all_invoices = sales_engine.invoices.all
-    invoices_by_status = all_invoices.select do |invoice|
+    all = sales_engine.invoices.all
+    invoices_by_status = all.select do |invoice|
       invoice.status == status.to_sym
     end
-    status_ratio = ((all_invoices.count - invoices_by_status.count) / all_invoices.count.to_f)
+    status_ratio = ((all.count - invoices_by_status.count) / all.count.to_f)
     ((1 - status_ratio) * 100).round(2)
   end
 
@@ -174,15 +178,14 @@ class SalesAnalyst
   end
 
   def merchants_ranked_by_revenue
-    missing_merchants = sales_engine.missing_merchant_ids.keys.map do |merchant_id|
+    missing = sales_engine.missing_merchant_ids.keys.map do |merchant_id|
       sales_engine.get_merchant_from_merchant_id(merchant_id)
     end
-    all = top_revenue_earners(sales_engine.merchants.all.count) + missing_merchants
-    all.uniq
+    (top_revenue_earners(sales_engine.merchants.all.count) + missing).uniq
   end
 
   def top_earners_ids(number_of_merchants)
-    all_merchants_revenues = sales_engine.transform_invoice_items_to_total_revenue_per_merchant
+    all_merchants_revenues = sales_engine.merchant_ids_with_total_revenue
     top_earners_revenues = all_merchants_revenues.sort_by do |merchant, revenue|
       revenue
     end.reverse.slice(0..(number_of_merchants - 1))
@@ -202,7 +205,7 @@ class SalesAnalyst
   end
 
   def merchants_with_only_one_item
-    sales_engine.get_all_merchant_items.select do |merchant, items|
+    sales_engine.merchants_with_items.select do |merchant, items|
       items.count == 1
     end.keys
   end
@@ -220,15 +223,15 @@ class SalesAnalyst
   end
 
   def revenue_by_merchant(merchant_id)
-    sales_engine.transform_invoice_items_to_total_revenue_per_merchant[merchant_id]
+    sales_engine.merchant_ids_with_total_revenue[merchant_id]
   end
 
   def most_sold_item_for_merchant(merchant_id)
-    sales_engine.merchant_ids_with_most_sold_items[merchant_id]
+    sales_engine.link_merchant_ids_with_most_sold_items[merchant_id]
   end
 
   def best_item_for_merchant(merchant_id)
-    sales_engine.merchant_ids_with_best_items[merchant_id]
+    sales_engine.link_merchant_ids_with_best_items[merchant_id]
   end
 
 end
